@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LILY — งานของฉัน</title>
+<style>
+  :root { --bg:#faf7f5; --card:#fff; --ink:#2b2523; --mute:#8a7f7a; --line:#eadfda; --accent:#d9627d; --ok:#3f9d6b; --warn:#c9482b; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#1d1a19; --card:#272322; --ink:#f1ebe8; --mute:#a39893; --line:#3a3432; --accent:#ee8aa1; --ok:#62c28f; --warn:#f08466; }
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.5 system-ui,-apple-system,"Noto Sans Thai",sans-serif; }
+  main { max-width:640px; margin:0 auto; padding:16px; }
+  header { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:12px; }
+  h1 { font-size:20px; margin:0; }
+  .who { font-size:12px; color:var(--mute); }
+  button { font:inherit; color:inherit; cursor:pointer; }
+  .link { background:none; border:0; color:var(--accent); padding:4px 0; font-size:13px; }
+  .tabs { display:flex; gap:6px; margin-bottom:12px; }
+  .tab { flex:1; padding:8px; border:1px solid var(--line); background:var(--card); border-radius:10px; font-size:14px; }
+  .tab[aria-selected="true"] { border-color:var(--accent); color:var(--accent); font-weight:600; }
+  ul { list-style:none; margin:0; padding:0; display:grid; gap:8px; }
+  li { display:flex; align-items:flex-start; gap:12px; background:var(--card); border:1px solid var(--line); border-radius:12px; padding:12px; }
+  li.busy { opacity:.5; pointer-events:none; }
+  .chk { flex:none; width:28px; height:28px; border-radius:50%; border:2px solid var(--accent); background:none; color:#fff; display:grid; place-items:center; font-size:16px; line-height:1; }
+  .done .chk { background:var(--ok); border-color:var(--ok); }
+  .body { flex:1; min-width:0; }
+  .title { overflow-wrap:anywhere; }
+  .done .title { text-decoration:line-through; color:var(--mute); }
+  .meta { font-size:13px; color:var(--mute); }
+  .meta .late { color:var(--warn); font-weight:600; }
+  .meta .today { color:var(--accent); font-weight:600; }
+  .id { font-size:12px; color:var(--mute); flex:none; }
+  .empty, .msg { text-align:center; color:var(--mute); padding:32px 8px; }
+  .err { color:var(--warn); }
+  #gbtn { display:flex; justify-content:center; margin:24px 0; }
+  .sr { position:absolute; left:-9999px; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div><h1>LILY · งานของฉัน</h1><div class="who" id="who"></div></div>
+    <div><button class="link" id="reload" hidden>รีเฟรช</button> <button class="link" id="out" hidden>ออกจากระบบ</button></div>
+  </header>
+
+  <div id="login" hidden>
+    <p class="msg">เข้าสู่ระบบด้วยบัญชี Google ที่ได้รับอนุญาต</p>
+    <div id="gbtn"></div>
+  </div>
+
+  <div id="app" hidden>
+    <div class="tabs" role="tablist">
+      <button class="tab" role="tab" data-tab="open" aria-selected="true">ค้างอยู่ <span id="n-open"></span></button>
+      <button class="tab" role="tab" data-tab="today" aria-selected="false">ถึงกำหนด <span id="n-today"></span></button>
+      <button class="tab" role="tab" data-tab="done" aria-selected="false">เสร็จแล้ว</button>
+    </div>
+    <ul id="list"></ul>
+    <div class="msg" id="note" role="status" aria-live="polite"></div>
+  </div>
+  <div class="msg" id="status" role="status" aria-live="polite">กำลังโหลด…</div>
+</main>
+
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<script>
+// ===== ตั้งค่า 2 ค่านี้ก่อนใช้งาน =====
+const API_BASE = "https://lily.jsuparkit.workers.dev"; // URL ของ Worker (ไม่มี / ท้าย)
+const GOOGLE_CLIENT_ID = "665164861966-to9abp8egheksdm0f8vtk64kp6emcv0r.apps.googleusercontent.com";
+// ====================================
+
+const $ = (id) => document.getElementById(id);
+const TZ = "Asia/Bangkok";
+let idToken = null, data = null, tab = "open";
+
+const ymdBkk = (d) => new Intl.DateTimeFormat("sv-SE", { timeZone: TZ }).format(d); // YYYY-MM-DD
+const fmtDay = (d) => new Intl.DateTimeFormat("th-TH", { timeZone: TZ, weekday: "short", day: "numeric", month: "short" }).format(d);
+const fmtTime = (d) => new Intl.DateTimeFormat("th-TH", { timeZone: TZ, hour: "2-digit", minute: "2-digit", hour12: false }).format(d);
+
+function dueInfo(t) {
+  if (!t.due_at) return { text: "ไม่มีกำหนด", cls: "" };
+  const d = new Date(t.due_at), now = new Date(data ? data.now : Date.now());
+  const text = fmtDay(d) + (t.timed ? " " + fmtTime(d) : "");
+  const dayD = ymdBkk(d), dayN = ymdBkk(now);
+  if (t.status === "done") return { text, cls: "" };
+  if (dayD < dayN || (dayD === dayN && t.timed && d < now)) return { text: "เลยกำหนด · " + text, cls: "late" };
+  if (dayD === dayN) return { text: "วันนี้" + (t.timed ? " " + fmtTime(d) : ""), cls: "today" };
+  return { text, cls: "" };
+}
+
+function isToday(t) {
+  return t.due_at && ymdBkk(new Date(t.due_at)) <= ymdBkk(new Date(data.now));
+}
+
+function render() {
+  const open = data.open, today = open.filter(isToday);
+  $("n-open").textContent = "(" + open.length + ")";
+  $("n-today").textContent = "(" + today.length + ")";
+  const rows = tab === "open" ? open : tab === "today" ? today : data.done;
+  const ul = $("list");
+  ul.replaceChildren();
+  for (const t of rows) {
+    const li = document.createElement("li");
+    li.dataset.id = t.id;
+    if (tab === "done") li.className = "done";
+    const b = document.createElement("button");
+    b.className = "chk";
+    b.textContent = tab === "done" ? "✓" : "";
+    b.setAttribute("aria-label", (tab === "done" ? "ยกเลิกเสร็จ: " : "ทำเสร็จ: ") + t.title);
+    b.addEventListener("click", () => act(t.id, tab === "done" ? "reopen" : "done", li));
+    const body = document.createElement("div");
+    body.className = "body";
+    const title = document.createElement("div");
+    title.className = "title";
+    title.textContent = t.title; // textContent เท่านั้น ไม่ใช้ innerHTML
+    const meta = document.createElement("div");
+    meta.className = "meta";
+    const di = dueInfo({ ...t, status: tab === "done" ? "done" : "open" });
+    const span = document.createElement("span");
+    span.className = di.cls;
+    span.textContent = di.text;
+    meta.append(span);
+    if (t.project) meta.append(" · " + t.project);
+    body.append(title, meta);
+    const id = document.createElement("div");
+    id.className = "id";
+    id.textContent = "#" + t.id;
+    li.append(b, body, id);
+    ul.append(li);
+  }
+  $("note").textContent = rows.length ? "" : (tab === "done" ? "ยังไม่มีงานที่เสร็จ" : "ไม่มีงานค้าง 🎉");
+}
+
+function show(which) {
+  $("login").hidden = which !== "login";
+  $("app").hidden = which !== "app";
+  $("out").hidden = $("reload").hidden = which !== "app";
+  $("status").hidden = which !== "status";
+}
+function setStatus(msg, isErr) {
+  show("status");
+  $("status").textContent = msg;
+  $("status").className = "msg" + (isErr ? " err" : "");
+}
+
+async function api(path, method = "GET") {
+  const res = await fetch(API_BASE + path, { method, headers: { Authorization: "Bearer " + idToken } });
+  let body = null;
+  try { body = await res.json(); } catch {}
+  if (!res.ok) { const e = new Error((body && body.error) || "http_" + res.status); e.status = res.status; throw e; }
+  return body;
+}
+
+function authFailed(e) {
+  if (e.status === 401) { signOut("เซสชันหมดอายุ กรุณาเข้าสู่ระบบอีกครั้ง"); return true; }
+  if (e.status === 403) { signOut("บัญชีนี้ไม่ได้รับอนุญาต"); return true; }
+  return false;
+}
+
+async function load() {
+  try {
+    data = await api("/api/tasks");
+    $("who").textContent = data.email;
+    show("app");
+    render();
+  } catch (e) {
+    if (authFailed(e)) return;
+    if (e.message === "not_configured") setStatus("ฝั่งเซิร์ฟเวอร์ยังตั้งค่าไม่ครบ (GOOGLE_CLIENT_ID / ALLOWED_EMAILS)", true);
+    else setStatus("โหลดไม่สำเร็จ ลองรีเฟรชอีกครั้ง", true);
+  }
+}
+
+async function act(id, what, li) {
+  li.classList.add("busy");
+  try {
+    await api("/api/tasks/" + id + "/" + what, "POST");
+    await load();
+  } catch (e) {
+    li.classList.remove("busy");
+    if (authFailed(e)) return;
+    $("note").textContent = e.status === 404 ? "งานนี้เปลี่ยนสถานะไปแล้ว กำลังรีเฟรช…" : "ทำรายการไม่สำเร็จ";
+    if (e.status === 404) load();
+  }
+}
+
+function signOut(msg) {
+  idToken = null; data = null;
+  try { sessionStorage.removeItem("lily_tok"); } catch {}
+  if (window.google && google.accounts) google.accounts.id.disableAutoSelect();
+  show("login");
+  $("who").textContent = msg || "";
+}
+
+function onCredential(resp) {
+  idToken = resp.credential;
+  try { sessionStorage.setItem("lily_tok", idToken); } catch {}
+  setStatus("กำลังโหลด…");
+  load();
+}
+
+function tokenUsable(tok) {
+  try {
+    const p = JSON.parse(atob(tok.split(".")[1].replace(/-/g, "+").replace(/_/g, "/")));
+    return p.exp * 1000 > Date.now() + 30000;
+  } catch { return false; }
+}
+
+function initGoogle() {
+  if (!(window.google && google.accounts && google.accounts.id)) { setTimeout(initGoogle, 100); return; }
+  google.accounts.id.initialize({ client_id: GOOGLE_CLIENT_ID, callback: onCredential, auto_select: true });
+  google.accounts.id.renderButton($("gbtn"), { theme: "outline", size: "large", text: "signin_with", locale: "th" });
+  if (!idToken) { show("login"); google.accounts.id.prompt(); }
+}
+
+document.querySelectorAll(".tab").forEach((b) =>
+  b.addEventListener("click", () => {
+    tab = b.dataset.tab;
+    document.querySelectorAll(".tab").forEach((x) => x.setAttribute("aria-selected", String(x === b)));
+    if (data) render();
+  })
+);
+$("reload").addEventListener("click", load);
+$("out").addEventListener("click", () => signOut(""));
+
+try {
+  const saved = sessionStorage.getItem("lily_tok");
+  if (saved && tokenUsable(saved)) { idToken = saved; load(); }
+} catch {}
+initGoogle();
+</script>
+</body>
+</html>
