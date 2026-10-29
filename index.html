@@ -16,6 +16,7 @@
     :root { --bg:#1d1a19; --card:#272322; --ink:#f1ebe8; --mute:#a39893; --line:#3a3432; --accent:#ee8aa1; --ok:#62c28f; --warn:#f08466; }
   }
   * { box-sizing:border-box; }
+  [hidden] { display:none !important; }
   body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.5 system-ui,-apple-system,"Noto Sans Thai",sans-serif; }
   main { max-width:640px; margin:0 auto; padding:16px; }
   header { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:12px; }
@@ -60,6 +61,8 @@
   .chips { display:grid; gap:2px; max-height:140px; overflow:auto; border:1px solid var(--line); border-radius:10px; padding:6px 10px; }
   .chips label { display:flex; gap:8px; align-items:center; margin:0; color:var(--ink); font-size:15px; }
   .chips input { width:auto; }
+  .chip { color:var(--accent); }
+  .nbody { white-space:pre-wrap; overflow-wrap:anywhere; }
   h2 { font-size:15px; margin:16px 0 4px; }
   .form-err { color:var(--warn); font-size:13px; min-height:18px; margin-top:8px; }
 </style>
@@ -81,8 +84,14 @@
       <button class="tab" role="tab" data-tab="open" aria-selected="true">ค้างอยู่ <span id="n-open"></span></button>
       <button class="tab" role="tab" data-tab="today" aria-selected="false">ถึงกำหนด <span id="n-today"></span></button>
       <button class="tab" role="tab" data-tab="done" aria-selected="false">เสร็จแล้ว</button>
+      <button class="tab" role="tab" data-tab="notes" aria-selected="false">โน้ต</button>
     </div>
+    <select id="pfilter" aria-label="กรองตามหมวด" hidden style="margin-bottom:10px"></select>
     <ul id="list"></ul>
+    <div id="notes" hidden>
+      <input id="nsearch" type="search" placeholder="ค้นโน้ต" maxlength="100" autocomplete="off" style="margin-bottom:10px">
+      <ul id="nlist"></ul>
+    </div>
     <div class="msg" id="note" role="status" aria-live="polite"></div>
   </div>
   <div class="msg" id="status" role="status" aria-live="polite">กำลังโหลด…</div>
@@ -113,11 +122,30 @@
   <div class="actions"><button type="button" class="btn" id="c-close">ปิด</button></div>
 </dialog>
 
+<dialog id="ndlg">
+  <form id="nform" method="dialog">
+    <strong id="n-title">โน้ตใหม่</strong>
+    <label for="n-body">ข้อความ</label>
+    <textarea id="n-body" rows="6" maxlength="2000" required style="width:100%;font:inherit;color:inherit;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:10px"></textarea>
+    <label for="n-tag">หมวด (ไม่บังคับ ไม่เว้นวรรค)</label>
+    <input id="n-tag" maxlength="30" list="plist" autocomplete="off">
+    <div class="form-err" id="n-err" role="alert"></div>
+    <div class="actions">
+      <button type="button" class="btn" id="n-del" hidden>ลบ</button>
+      <button type="button" class="btn" id="n-cancel">ยกเลิก</button>
+      <button type="submit" class="btn primary" id="n-save">บันทึก</button>
+    </div>
+  </form>
+</dialog>
+
 <dialog id="dlg">
   <form id="form" method="dialog">
     <strong id="dlg-title">งานใหม่</strong>
     <label for="f-title">ชื่องาน</label>
     <input id="f-title" maxlength="200" required autocomplete="off">
+    <label for="f-project">หมวด/โปรเจกต์ (ไม่บังคับ)</label>
+    <input id="f-project" maxlength="30" list="plist" placeholder="เช่น บ้านพร้อม" autocomplete="off">
+    <datalist id="plist"></datalist>
     <div class="row">
       <div><label for="f-date">วันที่</label><input id="f-date" type="date"></div>
       <div><label for="f-time">เวลา (ไม่ใส่ = ทั้งวัน)</label><input id="f-time" type="time"></div>
@@ -158,9 +186,13 @@ const ERR_TH = {
   time_without_date: "ใส่เวลาแล้วต้องเลือกวันที่ด้วย",
   repeat_needs_date: "งานที่ทำซ้ำต้องเลือกวันที่เริ่ม",
   bad_repeat: "รูปแบบการทำซ้ำไม่ถูกต้อง",
+  bad_project: "ชื่อหมวดไม่เว้นวรรค ไม่เกิน 30 ตัว และห้ามเป็นตัวเลขล้วน",
+  bad_note_too_long: "โน้ตยาวเกิน 2,000 ตัวอักษร",
+  bad_note_empty: "โน้ตต้องไม่ว่าง",
+  bad_note_full: "โน้ตเต็มแล้ว ลบบางอันก่อน",
   not_found_or_not_open: "งานนี้ถูกเปลี่ยนสถานะไปแล้ว",
 };
-let idToken = null, data = null, tab = "open", editing = null;
+let idToken = null, data = null, tab = "open", editing = null, pfilter = "", notes = [], editingNote = null;
 
 const ymdBkk = (d) => new Intl.DateTimeFormat("en-CA", { timeZone: TZ }).format(d); // YYYY-MM-DD
 const fmtDay = (d) => new Intl.DateTimeFormat("th-TH", { timeZone: TZ, weekday: "short", day: "numeric", month: "short" }).format(d);
@@ -192,7 +224,18 @@ function render() {
   const open = data.open, today = open.filter(isToday);
   $("n-open").textContent = "(" + open.length + ")";
   $("n-today").textContent = "(" + today.length + ")";
-  const rows = tab === "open" ? open : tab === "today" ? today : data.done;
+  const projects = [...new Set([...open, ...data.done].map((t) => t.project).filter(Boolean))].sort();
+  $("plist").replaceChildren(...projects.map((p) => { const o = document.createElement("option"); o.value = p; return o; }));
+  const pf = $("pfilter");
+  if (pfilter && !projects.includes(pfilter)) pfilter = "";
+  pf.replaceChildren(...[["", "ทุกหมวด"], ...projects.map((p) => [p, "#" + p])].map(([v, l]) => { const o = document.createElement("option"); o.value = v; o.textContent = l; return o; }));
+  pf.value = pfilter;
+  const isNotes = tab === "notes";
+  pf.hidden = isNotes || !projects.length;
+  $("list").hidden = isNotes; $("notes").hidden = !isNotes;
+  if (isNotes) { loadNotes(); $("note").textContent = ""; return; }
+  const base = tab === "open" ? open : tab === "today" ? today : data.done;
+  const rows = pfilter ? base.filter((t) => t.project === pfilter) : base;
   const ul = $("list");
   ul.replaceChildren();
   for (const t of rows) {
@@ -216,7 +259,7 @@ function render() {
     span.textContent = di.text;
     meta.append(span);
     if (t.repeat) { const r = document.createElement("span"); r.className = "rep"; r.textContent = " · 🔁 " + repeatText(t.repeat); meta.append(r); }
-    if (t.project) meta.append(" · " + t.project);
+    if (t.project) { const pj = document.createElement("span"); pj.className = "chip"; pj.textContent = " · #" + t.project; meta.append(pj); }
     body.append(title, meta);
     li.append(b, body);
     if (tab !== "done") {
@@ -296,6 +339,7 @@ function openForm(t) {
   editing = t || null;
   $("dlg-title").textContent = t ? "แก้ไขงาน #" + t.id : "งานใหม่";
   $("f-title").value = t ? t.title : "";
+  $("f-project").value = t && t.project ? t.project : "";
   let d = "", tm = "";
   if (t && t.due_at) { const dt = new Date(t.due_at); d = ymdBkk(dt); tm = t.timed ? hhmmBkk(dt) : ""; }
   $("f-date").value = d; $("f-time").value = tm;
@@ -310,7 +354,7 @@ function openForm(t) {
   $("f-title").focus();
 }
 
-$("add").addEventListener("click", () => openForm(null));
+$("add").addEventListener("click", () => (tab === "notes" ? openNote(null) : openForm(null)));
 $("f-cancel").addEventListener("click", () => $("dlg").close());
 $("f-clear").addEventListener("click", () => { $("f-date").value = ""; $("f-time").value = ""; });
 $("form").addEventListener("submit", async (ev) => {
@@ -324,12 +368,15 @@ $("form").addEventListener("submit", async (ev) => {
     let msg = "";
     if (!editing) {
       const body = { title, due_date: date || null, due_time: time || null };
+      if ($("f-project").value.trim()) body.project = $("f-project").value.trim().replace(/^#/, "");
       if ($("f-repeat").value) body.repeat = $("f-repeat").value;
       const r = await api("/api/tasks", "POST", body);
       msg = body.repeat && r && r.repeat_saved === false ? "เพิ่มงานแล้ว แต่ตั้งซ้ำไม่สำเร็จ (ยังไม่ได้สร้างตารางงานซ้ำ)" : "เพิ่มงานแล้ว ✅";
     } else {
       const body = {};
       if (title !== editing.title) body.title = title;
+      const pj = $("f-project").value.trim().replace(/^#/, "");
+      if (pj !== (editing.project || "")) body.project = pj || null;
       if (date !== $("dlg").dataset.d || time !== $("dlg").dataset.t) { body.due_date = date || null; body.due_time = time || null; }
       if (Object.keys(body).length) await api("/api/tasks/" + editing.id + "/update", "POST", body);
       msg = Object.keys(body).length ? "บันทึกแล้ว ✅" : "";
@@ -355,6 +402,65 @@ $("export").addEventListener("click", async () => {
     setTimeout(() => URL.revokeObjectURL(a.href), 5000);
   } catch (e) {
     if (!authFailed(e)) $("note").textContent = "ดาวน์โหลดไม่สำเร็จ";
+  }
+});
+
+// ----- กรองหมวด / โน้ต -----
+$("pfilter").addEventListener("change", () => { pfilter = $("pfilter").value; render(); });
+let nTimer = null;
+$("nsearch").addEventListener("input", () => { clearTimeout(nTimer); nTimer = setTimeout(loadNotes, 300); });
+async function loadNotes() {
+  try {
+    const q = $("nsearch").value.trim();
+    const r = await api("/api/notes" + (q ? "?q=" + encodeURIComponent(q) : ""));
+    notes = r.notes || [];
+    renderNotes();
+  } catch (e) {
+    if (authFailed(e)) return;
+    $("note").textContent = e.message === "no_tables" ? "ยังไม่ได้สร้างตาราง notes ใน D1 (ดู README)" : "โหลดโน้ตไม่สำเร็จ";
+  }
+}
+function renderNotes() {
+  const ul = $("nlist"); ul.replaceChildren();
+  for (const n of notes) {
+    const li = document.createElement("li");
+    const body = document.createElement("div"); body.className = "body";
+    const txt = document.createElement("div"); txt.className = "title nbody"; txt.textContent = n.body;
+    const meta = document.createElement("div"); meta.className = "meta";
+    meta.textContent = fmtDay(new Date(n.created_at)) + " " + hhmmBkk(new Date(n.created_at));
+    if (n.tag) { const c = document.createElement("span"); c.className = "chip"; c.textContent = " · #" + n.tag; meta.append(c); }
+    body.append(txt, meta);
+    const e = document.createElement("button"); e.className = "edit"; e.textContent = "แก้ไข"; e.addEventListener("click", () => openNote(n));
+    const id = document.createElement("div"); id.className = "id"; id.textContent = "#" + n.id;
+    li.append(body, e, id); ul.append(li);
+  }
+  $("note").textContent = notes.length ? "" : ($("nsearch").value ? "ไม่พบโน้ตที่ตรงกับคำค้น" : "ยังไม่มีโน้ต กด + เพื่อจด หรือพิมพ์ “จด …” ใน LINE");
+}
+function openNote(n) {
+  editingNote = n || null;
+  $("n-title").textContent = n ? "แก้โน้ต #" + n.id : "โน้ตใหม่";
+  $("n-body").value = n ? n.body : ""; $("n-tag").value = n && n.tag ? n.tag : "";
+  $("n-del").hidden = !n; $("n-err").textContent = ""; $("n-save").disabled = false;
+  $("ndlg").showModal(); $("n-body").focus();
+}
+$("n-cancel").addEventListener("click", () => $("ndlg").close());
+$("n-del").addEventListener("click", async () => {
+  if (!editingNote || !window.confirm("ลบโน้ตนี้?")) return;
+  try { await api("/api/notes/" + editingNote.id + "/delete", "POST", {}); $("ndlg").close(); await loadNotes(); }
+  catch (e) { if (!authFailed(e)) $("n-err").textContent = "ลบไม่สำเร็จ"; }
+});
+$("nform").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const body = { body: $("n-body").value.trim(), tag: $("n-tag").value.trim().replace(/^#/, "") || null };
+  if (!body.body) { $("n-err").textContent = ERR_TH.bad_note_empty; return; }
+  $("n-save").disabled = true;
+  try {
+    await api(editingNote ? "/api/notes/" + editingNote.id + "/update" : "/api/notes", "POST", body);
+    $("ndlg").close(); await loadNotes();
+  } catch (e) {
+    $("n-save").disabled = false;
+    if (e.status === 401 || e.status === 403) { $("ndlg").close(); authFailed(e); return; }
+    $("n-err").textContent = ERR_TH[e.message] || (e.message === "no_tables" ? "ยังไม่ได้สร้างตาราง notes ใน D1" : "บันทึกไม่สำเร็จ");
   }
 });
 
