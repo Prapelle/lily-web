@@ -4,6 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>LILY — งานของฉัน</title>
+<meta name="theme-color" content="#d9627d">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="LILY">
 <style>
   :root { --bg:#faf7f5; --card:#fff; --ink:#2b2523; --mute:#8a7f7a; --line:#eadfda; --accent:#d9627d; --ok:#3f9d6b; --warn:#c9482b; }
   @media (prefers-color-scheme: dark) {
@@ -36,6 +42,19 @@
   .err { color:var(--warn); }
   #gbtn { display:flex; justify-content:center; margin:24px 0; }
   .sr { position:absolute; left:-9999px; }
+  .edit { flex:none; background:none; border:0; color:var(--mute); font-size:13px; padding:4px 6px; }
+  .rep { color:var(--accent); }
+  .fab { position:fixed; right:16px; bottom:16px; width:56px; height:56px; border-radius:50%; border:0; background:var(--accent); color:#fff; font-size:30px; line-height:1; box-shadow:0 2px 10px rgba(0,0,0,.25); }
+  .foot { text-align:center; margin:24px 0 80px; }
+  dialog { border:1px solid var(--line); border-radius:14px; background:var(--card); color:var(--ink); padding:16px; width:min(92vw,420px); }
+  dialog::backdrop { background:rgba(0,0,0,.4); }
+  label { display:block; font-size:13px; color:var(--mute); margin:10px 0 4px; }
+  input, select { width:100%; font:inherit; color:inherit; background:var(--bg); border:1px solid var(--line); border-radius:10px; padding:10px; }
+  .row { display:flex; gap:8px; } .row > div { flex:1; }
+  .actions { display:flex; gap:8px; justify-content:flex-end; margin-top:16px; flex-wrap:wrap; }
+  .btn { padding:10px 16px; border-radius:10px; border:1px solid var(--line); background:var(--card); }
+  .btn.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+  .form-err { color:var(--warn); font-size:13px; min-height:18px; margin-top:8px; }
 </style>
 </head>
 <body>
@@ -60,7 +79,36 @@
     <div class="msg" id="note" role="status" aria-live="polite"></div>
   </div>
   <div class="msg" id="status" role="status" aria-live="polite">กำลังโหลด…</div>
+  <div class="foot" id="foot" hidden><button class="link" id="export">ดาวน์โหลดไฟล์สำรองข้อมูล (JSON)</button></div>
 </main>
+<button class="fab" id="add" aria-label="เพิ่มงานใหม่" hidden>+</button>
+
+<dialog id="dlg">
+  <form id="form" method="dialog">
+    <strong id="dlg-title">งานใหม่</strong>
+    <label for="f-title">ชื่องาน</label>
+    <input id="f-title" maxlength="200" required autocomplete="off">
+    <div class="row">
+      <div><label for="f-date">วันที่</label><input id="f-date" type="date"></div>
+      <div><label for="f-time">เวลา (ไม่ใส่ = ทั้งวัน)</label><input id="f-time" type="time"></div>
+    </div>
+    <label for="f-repeat">ทำซ้ำ</label>
+    <select id="f-repeat">
+      <option value="">ไม่ซ้ำ</option>
+      <option value="daily">ทุกวัน</option>
+      <option value="weekdays">ทุกวันทำงาน (จ.–ศ.)</option>
+      <option value="weekly">ทุกสัปดาห์</option>
+      <option value="monthly">ทุกเดือน</option>
+    </select>
+    <div class="meta" id="f-note"></div>
+    <div class="form-err" id="f-err" role="alert"></div>
+    <div class="actions">
+      <button type="button" class="btn" id="f-clear" hidden>ล้างกำหนด</button>
+      <button type="button" class="btn" id="f-cancel">ยกเลิก</button>
+      <button type="submit" class="btn primary" id="f-save">บันทึก</button>
+    </div>
+  </form>
+</dialog>
 
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <script>
@@ -71,26 +119,44 @@ const GOOGLE_CLIENT_ID = "665164861966-to9abp8egheksdm0f8vtk64kp6emcv0r.apps.goo
 
 const $ = (id) => document.getElementById(id);
 const TZ = "Asia/Bangkok";
-let idToken = null, data = null, tab = "open";
+const REPEAT_TH = { daily: "ทุกวัน", weekdays: "ทุกวันทำงาน", weekly: "ทุกสัปดาห์" };
+const ERR_TH = {
+  in_the_past: "เวลานั้นผ่านไปแล้ว เลือกวันเวลาใหม่",
+  bad_title: "ชื่องานต้องไม่ว่างและไม่เกิน 200 ตัวอักษร",
+  bad_date: "วันที่ไม่ถูกต้อง",
+  bad_time: "เวลาไม่ถูกต้อง",
+  time_without_date: "ใส่เวลาแล้วต้องเลือกวันที่ด้วย",
+  repeat_needs_date: "งานที่ทำซ้ำต้องเลือกวันที่เริ่ม",
+  bad_repeat: "รูปแบบการทำซ้ำไม่ถูกต้อง",
+  not_found_or_not_open: "งานนี้ถูกเปลี่ยนสถานะไปแล้ว",
+};
+let idToken = null, data = null, tab = "open", editing = null;
 
-const ymdBkk = (d) => new Intl.DateTimeFormat("sv-SE", { timeZone: TZ }).format(d); // YYYY-MM-DD
+const ymdBkk = (d) => new Intl.DateTimeFormat("en-CA", { timeZone: TZ }).format(d); // YYYY-MM-DD
 const fmtDay = (d) => new Intl.DateTimeFormat("th-TH", { timeZone: TZ, weekday: "short", day: "numeric", month: "short" }).format(d);
-const fmtTime = (d) => new Intl.DateTimeFormat("th-TH", { timeZone: TZ, hour: "2-digit", minute: "2-digit", hour12: false }).format(d);
+const hhmmBkk = (d) => {
+  const p = Object.fromEntries(new Intl.DateTimeFormat("en-GB", { timeZone: TZ, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(d).map((x) => [x.type, x.value]));
+  return p.hour + ":" + p.minute;
+};
 
-function dueInfo(t) {
+function repeatText(rule) {
+  if (!rule) return "";
+  if (rule.startsWith("monthly:")) return "ทุกเดือน (วันที่ " + rule.slice(8) + ")";
+  return REPEAT_TH[rule] || "";
+}
+
+function dueInfo(t, status) {
   if (!t.due_at) return { text: "ไม่มีกำหนด", cls: "" };
   const d = new Date(t.due_at), now = new Date(data ? data.now : Date.now());
-  const text = fmtDay(d) + (t.timed ? " " + fmtTime(d) : "");
+  const text = fmtDay(d) + (t.timed ? " " + hhmmBkk(d) : "");
   const dayD = ymdBkk(d), dayN = ymdBkk(now);
-  if (t.status === "done") return { text, cls: "" };
+  if (status === "done") return { text, cls: "" };
   if (dayD < dayN || (dayD === dayN && t.timed && d < now)) return { text: "เลยกำหนด · " + text, cls: "late" };
-  if (dayD === dayN) return { text: "วันนี้" + (t.timed ? " " + fmtTime(d) : ""), cls: "today" };
+  if (dayD === dayN) return { text: "วันนี้" + (t.timed ? " " + hhmmBkk(d) : ""), cls: "today" };
   return { text, cls: "" };
 }
 
-function isToday(t) {
-  return t.due_at && ymdBkk(new Date(t.due_at)) <= ymdBkk(new Date(data.now));
-}
+const isToday = (t) => t.due_at && ymdBkk(new Date(t.due_at)) <= ymdBkk(new Date(data.now));
 
 function render() {
   const open = data.open, today = open.filter(isToday);
@@ -101,7 +167,6 @@ function render() {
   ul.replaceChildren();
   for (const t of rows) {
     const li = document.createElement("li");
-    li.dataset.id = t.id;
     if (tab === "done") li.className = "done";
     const b = document.createElement("button");
     b.className = "chk";
@@ -115,17 +180,27 @@ function render() {
     title.textContent = t.title; // textContent เท่านั้น ไม่ใช้ innerHTML
     const meta = document.createElement("div");
     meta.className = "meta";
-    const di = dueInfo({ ...t, status: tab === "done" ? "done" : "open" });
+    const di = dueInfo(t, tab === "done" ? "done" : "open");
     const span = document.createElement("span");
     span.className = di.cls;
     span.textContent = di.text;
     meta.append(span);
+    if (t.repeat) { const r = document.createElement("span"); r.className = "rep"; r.textContent = " · 🔁 " + repeatText(t.repeat); meta.append(r); }
     if (t.project) meta.append(" · " + t.project);
     body.append(title, meta);
+    li.append(b, body);
+    if (tab !== "done") {
+      const e = document.createElement("button");
+      e.className = "edit";
+      e.textContent = "แก้ไข";
+      e.setAttribute("aria-label", "แก้ไข: " + t.title);
+      e.addEventListener("click", () => openForm(t));
+      li.append(e);
+    }
     const id = document.createElement("div");
     id.className = "id";
     id.textContent = "#" + t.id;
-    li.append(b, body, id);
+    li.append(id);
     ul.append(li);
   }
   $("note").textContent = rows.length ? "" : (tab === "done" ? "ยังไม่มีงานที่เสร็จ" : "ไม่มีงานค้าง 🎉");
@@ -134,7 +209,7 @@ function render() {
 function show(which) {
   $("login").hidden = which !== "login";
   $("app").hidden = which !== "app";
-  $("out").hidden = $("reload").hidden = which !== "app";
+  $("out").hidden = $("reload").hidden = $("foot").hidden = $("add").hidden = which !== "app";
   $("status").hidden = which !== "status";
 }
 function setStatus(msg, isErr) {
@@ -143,26 +218,29 @@ function setStatus(msg, isErr) {
   $("status").className = "msg" + (isErr ? " err" : "");
 }
 
-async function api(path, method = "GET") {
-  const res = await fetch(API_BASE + path, { method, headers: { Authorization: "Bearer " + idToken } });
-  let body = null;
-  try { body = await res.json(); } catch {}
-  if (!res.ok) { const e = new Error((body && body.error) || "http_" + res.status); e.status = res.status; throw e; }
-  return body;
+async function api(path, method = "GET", body) {
+  const headers = { Authorization: "Bearer " + idToken };
+  if (body !== undefined) headers["Content-Type"] = "application/json";
+  const res = await fetch(API_BASE + path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
+  let out = null;
+  try { out = await res.json(); } catch {}
+  if (!res.ok) { const e = new Error((out && out.error) || "http_" + res.status); e.status = res.status; throw e; }
+  return out;
 }
 
 function authFailed(e) {
-  if (e.status === 401) { signOut("เซสชันหมดอายุ กรุณาเข้าสู่ระบบอีกครั้ง"); return true; }
+  if (e.status === 401) { signOut("เซสชันหมดอายุ กำลังเข้าสู่ระบบอีกครั้ง…", true); return true; }
   if (e.status === 403) { signOut("บัญชีนี้ไม่ได้รับอนุญาต"); return true; }
   return false;
 }
 
-async function load() {
+async function load(msg) {
   try {
     data = await api("/api/tasks");
     $("who").textContent = data.email;
     show("app");
     render();
+    if (msg) $("note").textContent = msg;
   } catch (e) {
     if (authFailed(e)) return;
     if (e.message === "not_configured") setStatus("ฝั่งเซิร์ฟเวอร์ยังตั้งค่าไม่ครบ (GOOGLE_CLIENT_ID / ALLOWED_EMAILS)", true);
@@ -173,8 +251,8 @@ async function load() {
 async function act(id, what, li) {
   li.classList.add("busy");
   try {
-    await api("/api/tasks/" + id + "/" + what, "POST");
-    await load();
+    const r = await api("/api/tasks/" + id + "/" + what, "POST");
+    await load(r && r.next ? "สร้างรอบถัดไปแล้ว 🔁 (#" + r.next.id + ")" : "");
   } catch (e) {
     li.classList.remove("busy");
     if (authFailed(e)) return;
@@ -183,10 +261,81 @@ async function act(id, what, li) {
   }
 }
 
-function signOut(msg) {
+// ----- ฟอร์มเพิ่ม/แก้ไข -----
+function openForm(t) {
+  editing = t || null;
+  $("dlg-title").textContent = t ? "แก้ไขงาน #" + t.id : "งานใหม่";
+  $("f-title").value = t ? t.title : "";
+  let d = "", tm = "";
+  if (t && t.due_at) { const dt = new Date(t.due_at); d = ymdBkk(dt); tm = t.timed ? hhmmBkk(dt) : ""; }
+  $("f-date").value = d; $("f-time").value = tm;
+  $("dlg").dataset.d = d; $("dlg").dataset.t = tm;
+  $("f-repeat").value = "";
+  $("f-repeat").disabled = !!t;
+  $("f-note").textContent = t ? (t.repeat ? "ทำซ้ำ: " + repeatText(t.repeat) + " (เปลี่ยนรูปแบบซ้ำใน LINE หรือสร้างงานใหม่)" : "") : "";
+  $("f-clear").hidden = !t;
+  $("f-err").textContent = "";
+  $("f-save").disabled = false;
+  $("dlg").showModal();
+  $("f-title").focus();
+}
+
+$("add").addEventListener("click", () => openForm(null));
+$("f-cancel").addEventListener("click", () => $("dlg").close());
+$("f-clear").addEventListener("click", () => { $("f-date").value = ""; $("f-time").value = ""; });
+$("form").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  $("f-err").textContent = "";
+  const title = $("f-title").value.trim();
+  const date = $("f-date").value, time = $("f-time").value;
+  if (!title) { $("f-err").textContent = ERR_TH.bad_title; return; }
+  $("f-save").disabled = true;
+  try {
+    let msg = "";
+    if (!editing) {
+      const body = { title, due_date: date || null, due_time: time || null };
+      if ($("f-repeat").value) body.repeat = $("f-repeat").value;
+      const r = await api("/api/tasks", "POST", body);
+      msg = body.repeat && r && r.repeat_saved === false ? "เพิ่มงานแล้ว แต่ตั้งซ้ำไม่สำเร็จ (ยังไม่ได้สร้างตารางงานซ้ำ)" : "เพิ่มงานแล้ว ✅";
+    } else {
+      const body = {};
+      if (title !== editing.title) body.title = title;
+      if (date !== $("dlg").dataset.d || time !== $("dlg").dataset.t) { body.due_date = date || null; body.due_time = time || null; }
+      if (Object.keys(body).length) await api("/api/tasks/" + editing.id + "/update", "POST", body);
+      msg = Object.keys(body).length ? "บันทึกแล้ว ✅" : "";
+    }
+    $("dlg").close();
+    await load(msg);
+  } catch (e) {
+    $("f-save").disabled = false;
+    if (e.status === 401 || e.status === 403) { $("dlg").close(); authFailed(e); return; }
+    $("f-err").textContent = ERR_TH[e.message] || "บันทึกไม่สำเร็จ ลองอีกครั้ง";
+  }
+});
+
+// ----- ไฟล์สำรอง -----
+$("export").addEventListener("click", async () => {
+  try {
+    const out = await api("/api/export");
+    const blob = new Blob([JSON.stringify(out, null, 2)], { type: "application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "lily-backup-" + ymdBkk(new Date()) + ".json";
+    document.body.append(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  } catch (e) {
+    if (!authFailed(e)) $("note").textContent = "ดาวน์โหลดไม่สำเร็จ";
+  }
+});
+
+// ----- เข้าสู่ระบบ -----
+function signOut(msg, retry) {
   idToken = null; data = null;
   try { sessionStorage.removeItem("lily_tok"); } catch {}
-  if (window.google && google.accounts) google.accounts.id.disableAutoSelect();
+  if (window.google && google.accounts && google.accounts.id) {
+    if (!retry) google.accounts.id.disableAutoSelect();
+    else google.accounts.id.prompt(); // เซสชันหมดอายุ: ให้ Google ล็อกอินกลับให้เงียบ ๆ ถ้าเคยอนุญาตไว้
+  }
   show("login");
   $("who").textContent = msg || "";
 }
@@ -207,10 +356,17 @@ function tokenUsable(tok) {
 
 function initGoogle() {
   if (!(window.google && google.accounts && google.accounts.id)) { setTimeout(initGoogle, 100); return; }
-  google.accounts.id.initialize({ client_id: GOOGLE_CLIENT_ID, callback: onCredential, auto_select: true });
+  google.accounts.id.initialize({ client_id: GOOGLE_CLIENT_ID, callback: onCredential, auto_select: true, cancel_on_tap_outside: false });
   google.accounts.id.renderButton($("gbtn"), { theme: "outline", size: "large", text: "signin_with", locale: "th" });
   if (!idToken) { show("login"); google.accounts.id.prompt(); }
 }
+
+// กลับมาเปิดหน้าหลังพักนาน (token หมดอายุประมาณ 1 ชม.): โหลดใหม่/ล็อกอินกลับอัตโนมัติ
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState !== "visible" || $("app").hidden) return;
+  if (idToken && !tokenUsable(idToken)) signOut("กำลังเข้าสู่ระบบอีกครั้ง…", true);
+  else if (idToken) load();
+});
 
 document.querySelectorAll(".tab").forEach((b) =>
   b.addEventListener("click", () => {
@@ -219,8 +375,10 @@ document.querySelectorAll(".tab").forEach((b) =>
     if (data) render();
   })
 );
-$("reload").addEventListener("click", load);
+$("reload").addEventListener("click", () => load());
 $("out").addEventListener("click", () => signOut(""));
+
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
 
 try {
   const saved = sessionStorage.getItem("lily_tok");
