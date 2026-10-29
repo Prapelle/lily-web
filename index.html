@@ -54,6 +54,13 @@
   .actions { display:flex; gap:8px; justify-content:flex-end; margin-top:16px; flex-wrap:wrap; }
   .btn { padding:10px 16px; border-radius:10px; border:1px solid var(--line); background:var(--card); }
   .btn.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+  .crow { display:flex; align-items:center; gap:8px; padding:6px 0; border-bottom:1px solid var(--line); }
+  .crow .nm { flex:1; min-width:0; overflow-wrap:anywhere; }
+  .crow small { color:var(--mute); display:block; }
+  .chips { display:grid; gap:2px; max-height:140px; overflow:auto; border:1px solid var(--line); border-radius:10px; padding:6px 10px; }
+  .chips label { display:flex; gap:8px; align-items:center; margin:0; color:var(--ink); font-size:15px; }
+  .chips input { width:auto; }
+  h2 { font-size:15px; margin:16px 0 4px; }
   .form-err { color:var(--warn); font-size:13px; min-height:18px; margin-top:8px; }
 </style>
 </head>
@@ -61,7 +68,7 @@
 <main>
   <header>
     <div><h1>LILY · งานของฉัน</h1><div class="who" id="who"></div></div>
-    <div><button class="link" id="reload" hidden>รีเฟรช</button> <button class="link" id="out" hidden>ออกจากระบบ</button></div>
+    <div><button class="link" id="people" hidden>รายชื่อ</button> <button class="link" id="reload" hidden>รีเฟรช</button> <button class="link" id="out" hidden>ออกจากระบบ</button></div>
   </header>
 
   <div id="login" hidden>
@@ -82,6 +89,29 @@
   <div class="foot" id="foot" hidden><button class="link" id="export">ดาวน์โหลดไฟล์สำรองข้อมูล (JSON)</button></div>
 </main>
 <button class="fab" id="add" aria-label="เพิ่มงานใหม่" hidden>+</button>
+
+<dialog id="cdlg">
+  <strong>รายชื่อและกลุ่ม</strong>
+  <div class="meta">ใน LINE พิมพ์ @ชื่อ หรือ @กลุ่ม ตอนนัดเพื่อเชิญทุกคนได้เลย</div>
+  <h2>รายชื่อ</h2>
+  <div id="c-list"></div>
+  <form id="c-form" class="row" style="align-items:flex-end;margin-top:8px">
+    <div><label for="c-name">ชื่อ (ไม่เว้นวรรค)</label><input id="c-name" maxlength="30" autocomplete="off" required></div>
+    <div><label for="c-mail">อีเมล</label><input id="c-mail" type="email" maxlength="120" autocomplete="off" required></div>
+    <button class="btn primary" type="submit">บันทึก</button>
+  </form>
+  <h2>กลุ่ม</h2>
+  <div id="g-list"></div>
+  <form id="g-form" style="margin-top:8px">
+    <label for="g-name" id="g-label">สร้างกลุ่มใหม่ / แก้กลุ่ม</label>
+    <input id="g-name" maxlength="30" placeholder="ชื่อกลุ่ม เช่น ทีมคอนเท้น" autocomplete="off" required>
+    <label>สมาชิก</label>
+    <div class="chips" id="g-chips"></div>
+    <div class="actions"><button class="btn primary" type="submit">บันทึกกลุ่ม</button></div>
+  </form>
+  <div class="form-err" id="c-msg" role="status"></div>
+  <div class="actions"><button type="button" class="btn" id="c-close">ปิด</button></div>
+</dialog>
 
 <dialog id="dlg">
   <form id="form" method="dialog">
@@ -209,7 +239,7 @@ function render() {
 function show(which) {
   $("login").hidden = which !== "login";
   $("app").hidden = which !== "app";
-  $("out").hidden = $("reload").hidden = $("foot").hidden = $("add").hidden = which !== "app";
+  $("out").hidden = $("reload").hidden = $("people").hidden = $("foot").hidden = $("add").hidden = which !== "app";
   $("status").hidden = which !== "status";
 }
 function setStatus(msg, isErr) {
@@ -327,6 +357,64 @@ $("export").addEventListener("click", async () => {
     if (!authFailed(e)) $("note").textContent = "ดาวน์โหลดไม่สำเร็จ";
   }
 });
+
+// ----- รายชื่อและกลุ่ม -----
+let book = { contacts: [], groups: [] };
+function cmsg(t, bad) { const m = $("c-msg"); m.textContent = t || ""; m.style.color = bad ? "" : "var(--ok)"; }
+function crow(main, sub, buttons) {
+  const d = document.createElement("div"); d.className = "crow";
+  const n = document.createElement("div"); n.className = "nm"; n.textContent = main;
+  const sm = document.createElement("small"); sm.textContent = sub; n.appendChild(sm);
+  d.appendChild(n);
+  for (const [label, fn] of buttons) { const b = document.createElement("button"); b.type = "button"; b.className = "link"; b.textContent = label; b.onclick = fn; d.appendChild(b); }
+  return d;
+}
+function renderBook(editGroup) {
+  const cl = $("c-list"); cl.replaceChildren();
+  if (!book.contacts.length) cl.textContent = "ยังไม่มีรายชื่อ";
+  for (const c of book.contacts) cl.appendChild(crow("@" + c.name, c.email, [["ลบ", () => bookCall("/api/contacts/delete", { name: c.name }, "ลบ @" + c.name + " ? (จะถูกเอาออกจากทุกกลุ่ม)")]]));
+  const gl = $("g-list"); gl.replaceChildren();
+  if (!book.groups.length) gl.textContent = "ยังไม่มีกลุ่ม";
+  for (const g of book.groups) gl.appendChild(crow("@" + g.name, g.members.join(", ") || "(ว่าง)", [
+    ["แก้", () => { renderBook(g); $("g-name").focus(); }],
+    ["ลบ", () => bookCall("/api/groups/delete", { name: g.name }, "ลบกลุ่ม @" + g.name + " ? (รายชื่อคนยังอยู่)")],
+  ]));
+  const ch = $("g-chips"); ch.replaceChildren();
+  if (!book.contacts.length) ch.textContent = "เพิ่มรายชื่อก่อน";
+  const sel = new Set(editGroup ? editGroup.members : []);
+  for (const c of book.contacts) {
+    const l = document.createElement("label"), i = document.createElement("input");
+    i.type = "checkbox"; i.value = c.name; i.checked = sel.has(c.name);
+    l.append(i, document.createTextNode(c.name)); ch.appendChild(l);
+  }
+  if (editGroup) { $("g-name").value = editGroup.name; $("g-name").readOnly = true; }
+  else { $("g-name").readOnly = false; }
+}
+async function loadBook(keepMsg) {
+  try { book = await api("/api/contacts"); renderBook(); if (!keepMsg) cmsg(""); }
+  catch (e) { if (!authFailed(e)) cmsg(e.message === "no_tables" ? "ยังไม่ได้สร้างตารางรายชื่อใน D1 (ดู README)" : "โหลดรายชื่อไม่สำเร็จ", true); }
+}
+async function bookCall(path, body, confirmText) {
+  if (confirmText && !window.confirm(confirmText)) return;
+  try {
+    const r = await api(path, "POST", body);
+    cmsg(r.message, !r.ok);
+    if (r.ok) { $("g-name").value = ""; await loadBook(true); }
+  } catch (e) { if (!authFailed(e)) cmsg(e.message === "no_tables" ? "ยังไม่ได้สร้างตารางรายชื่อใน D1 (ดู README)" : "ทำรายการไม่สำเร็จ", true); }
+}
+$("people").onclick = () => { $("cdlg").showModal(); $("g-name").value = ""; loadBook(); };
+$("c-close").onclick = () => $("cdlg").close();
+$("c-form").onsubmit = async (ev) => {
+  ev.preventDefault();
+  await bookCall("/api/contacts", { name: $("c-name").value.trim().replace(/^@/, ""), email: $("c-mail").value.trim() });
+  if (/^(บันทึกแล้ว|อัปเดตแล้ว)/.test($("c-msg").textContent)) { $("c-name").value = ""; $("c-mail").value = ""; }
+};
+$("g-form").onsubmit = (ev) => {
+  ev.preventDefault();
+  const members = [...$("g-chips").querySelectorAll("input:checked")].map((i) => i.value);
+  if (!members.length) { cmsg("เลือกสมาชิกอย่างน้อย 1 คน", true); return; }
+  bookCall("/api/groups", { name: $("g-name").value.trim().replace(/^@/, ""), members });
+};
 
 // ----- เข้าสู่ระบบ -----
 function signOut(msg, retry) {
