@@ -224,7 +224,7 @@ async function api(path, method = "GET", body) {
   const res = await fetch(API_BASE + path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
   let out = null;
   try { out = await res.json(); } catch {}
-  if (!res.ok) { const e = new Error((out && out.error) || "http_" + res.status); e.status = res.status; throw e; }
+  if (!res.ok) { const e = new Error((out && out.error) || "http_" + res.status); e.status = res.status; e.missing = out && out.missing; throw e; }
   return out;
 }
 
@@ -243,7 +243,7 @@ async function load(msg) {
     if (msg) $("note").textContent = msg;
   } catch (e) {
     if (authFailed(e)) return;
-    if (e.message === "not_configured") setStatus("ฝั่งเซิร์ฟเวอร์ยังตั้งค่าไม่ครบ (GOOGLE_CLIENT_ID / ALLOWED_EMAILS)", true);
+    if (e.message === "not_configured") setStatus("ฝั่งเซิร์ฟเวอร์ยังตั้งค่าไม่ครบ — ขาด: " + ((e.missing && e.missing.join(", ")) || "GOOGLE_CLIENT_ID / ALLOWED_EMAILS / LINE_USER_ID"), true);
     else setStatus("โหลดไม่สำเร็จ ลองรีเฟรชอีกครั้ง", true);
   }
 }
