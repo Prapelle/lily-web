@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>นโยบายความเป็นส่วนตัว · LILY</title>
+<style>
+  body{font-family:system-ui,-apple-system,"Noto Sans Thai",sans-serif;max-width:720px;margin:0 auto;padding:24px 16px 48px;line-height:1.7;color:#222;background:#fff}
+  h1{font-size:1.6rem;margin-bottom:.2em} h2{font-size:1.15rem;margin-top:1.8em}
+  .muted{color:#666;font-size:.9rem} hr{margin:2.5em 0;border:0;border-top:1px solid #ddd}
+  @media(prefers-color-scheme:dark){body{background:#16161a;color:#e8e8ea}.muted{color:#a0a0a8}hr{border-color:#333}}
+</style>
+</head>
+<body>
+<h1>นโยบายความเป็นส่วนตัว (Privacy Policy)</h1>
+<p class="muted">LILY — ผู้ช่วยส่วนตัวสำหรับใช้คนเดียว · อัปเดตล่าสุด 31 ตุลาคม 2569 (2026)</p>
+
+<p>LILY เป็นแอปส่วนตัวที่เจ้าของพัฒนาไว้ใช้เองเพียงคนเดียว ไม่เปิดให้บุคคลทั่วไปสมัครใช้งาน และไม่มีการขายหรือแบ่งปันข้อมูลให้บุคคลที่สาม</p>
+
+<h2>ข้อมูลที่แอปเข้าถึง</h2>
+<ul>
+  <li><b>Google Calendar</b> (calendar.events): อ่านและสร้างนัดหมาย เพื่อแสดงตารางงานและนำนัดหมายมาเป็นงาน</li>
+  <li><b>Google Drive</b> (drive.file): บันทึกไฟล์ที่เจ้าของส่งเข้ามา ลงในโฟลเดอร์ "LILY" เท่านั้น และเข้าถึงได้เฉพาะไฟล์ที่แอปสร้างเอง</li>
+  <li><b>Google Sheets</b> (spreadsheets.readonly): อ่านอย่างเดียวจากชีตที่เจ้าของระบุ แอปไม่แก้ไขหรือลบข้อมูลในชีต</li>
+  <li><b>ข้อความ LINE</b> และข้อมูลงาน โน้ต ที่เจ้าของพิมพ์หรือส่งให้ LILY</li>
+</ul>
+
+<h2>การใช้และจัดเก็บข้อมูล</h2>
+<ul>
+  <li>ข้อมูลใช้เพื่อการทำงานของผู้ช่วยส่วนตัวเท่านั้น เช่น เตือนงาน สรุปงานรายวัน ค้นโน้ต</li>
+  <li>ข้อมูลงานและโน้ตเก็บในฐานข้อมูล Cloudflare D1 ของเจ้าของ รหัสสิทธิ์เข้าถึง (token) เก็บเป็น Secret บน Cloudflare Workers</li>
+  <li>บางข้อความอาจถูกส่งให้บริการโมเดล AI (Cloudflare Workers AI / Google Gemini) เพื่อสรุปหรือจัดลำดับงาน โดยไม่ส่งอีเมลหรือเบอร์โทรของรายชื่อติดต่อ</li>
+  <li>ข้อมูลจาก Google API ใช้ตามวัตถุประสงค์ข้างต้นเท่านั้น และไม่ถูกใช้เพื่อโฆษณาหรือเทรนโมเดล AI ทั่วไป</li>
+</ul>
+
+<h2>การแบ่งปันข้อมูล</h2>
+<p>ไม่ขาย ไม่โอน และไม่เปิดเผยข้อมูลผู้ใช้ให้บุคคลอื่น ยกเว้นผู้ให้บริการโครงสร้างพื้นฐานที่แอปต้องใช้ (Google, LINE, Cloudflare) เท่าที่จำเป็นต่อการทำงาน</p>
+
+<h2>การลบข้อมูลและเพิกถอนสิทธิ์</h2>
+<ul>
+  <li>เพิกถอนสิทธิ์ได้ทุกเมื่อที่ <a href="https://myaccount.google.com/permissions">myaccount.google.com/permissions</a></li>
+  <li>ลบข้อมูลที่เก็บไว้ได้โดยลบฐานข้อมูลหรือไฟล์ในโฟลเดอร์ "LILY" บน Google Drive</li>
+</ul>
+
+<h2>ติดต่อ</h2>
+<p>jsuparkit@gmail.com</p>
+
+<hr>
+
+<h1>Privacy Policy</h1>
+<p class="muted">LILY — a single-user personal assistant · Last updated: October 31, 2026</p>
+
+<p>LILY is a personal application built and used by its owner only. It is not offered to the public, and user data is never sold or shared with third parties.</p>
+
+<h2>Data accessed</h2>
+<ul>
+  <li><b>Google Calendar</b> (calendar.events): read and create events to show the owner's schedule and turn events into tasks.</li>
+  <li><b>Google Drive</b> (drive.file): save files the owner sends into a "LILY" folder. The app can only access files it created.</li>
+  <li><b>Google Sheets</b> (spreadsheets.readonly): read-only access to a spreadsheet the owner specifies. The app never edits or deletes sheet data.</li>
+  <li><b>LINE messages</b>, tasks and notes the owner sends to LILY.</li>
+</ul>
+
+<h2>Use and storage</h2>
+<ul>
+  <li>Data is used solely to operate the personal assistant (reminders, daily summaries, note search).</li>
+  <li>Tasks and notes are stored in the owner's own Cloudflare D1 database; access tokens are stored as Cloudflare Workers secrets.</li>
+  <li>Some text may be sent to AI model providers (Cloudflare Workers AI / Google Gemini) to summarize or prioritize tasks. Contact emails and phone numbers are not sent.</li>
+  <li>Data obtained through Google APIs is used only for the purposes above, and is not used for advertising or to train general AI models.</li>
+</ul>
+
+<h2>Sharing</h2>
+<p>No data is sold, transferred or disclosed to others, other than the infrastructure providers the app depends on (Google, LINE, Cloudflare), and only as needed to operate.</p>
+
+<h2>Deletion and revoking access</h2>
+<ul>
+  <li>Revoke access at any time at <a href="https://myaccount.google.com/permissions">myaccount.google.com/permissions</a>.</li>
+  <li>Delete stored data by deleting the database or the "LILY" folder in Google Drive.</li>
+</ul>
+
+<h2>Contact</h2>
+<p>jsuparkit@gmail.com</p>
+</body>
+</html>
