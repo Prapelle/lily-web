@@ -1,7 +1,7 @@
 // Service worker แบบเรียบง่าย: เก็บเปลือกหน้าเว็บไว้เปิดเร็ว/ติดตั้งเป็นแอปได้
 // ไม่เก็บข้อมูลงานและไม่แตะคำขอไป API ใด ๆ (ข้อมูลต้องสดและมาจากเซิร์ฟเวอร์เสมอ)
-const CACHE = "lily-shell-v1";
-const SHELL = ["./", "./index.html", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png"];
+const CACHE = "lily-shell-v2";
+const SHELL = ["./", "./index.html", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png", "./logo.png"];
 
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
