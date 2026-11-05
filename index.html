@@ -71,7 +71,7 @@
 <main>
   <header>
     <div style="display:flex;align-items:center;gap:10px"><img src="logo.png" alt="LILY" width="44" height="44" style="border-radius:50%;object-fit:cover"><div><h1>LILY · งานของฉัน</h1><div class="who" id="who"></div></div></div>
-    <div><button class="link" id="people" hidden>รายชื่อ</button> <button class="link" id="reload" hidden>รีเฟรช</button> <button class="link" id="out" hidden>ออกจากระบบ</button></div>
+    <div><button class="link" id="people" hidden>รายชื่อ</button> <button class="link" id="rcp" hidden>ผู้รับสรุป</button> <button class="link" id="reload" hidden>รีเฟรช</button> <button class="link" id="out" hidden>ออกจากระบบ</button></div>
   </header>
 
   <div id="login" hidden>
@@ -120,6 +120,14 @@
   </form>
   <div class="form-err" id="c-msg" role="status"></div>
   <div class="actions"><button type="button" class="btn" id="c-close">ปิด</button></div>
+</dialog>
+
+<dialog id="rdlg">
+  <strong>ผู้รับสรุปเช้า</strong>
+  <div class="meta">ลิลลี่ส่งตัวเลขสรุป 08:30 จ.–ส. ให้แต่ละคนเฉพาะส่วนที่ติ๊กไว้ (ไม่มีชื่อ/เบอร์ลูกค้า) · คนที่เพิ่งแอด LINE OA จะโผล่ในรายการนี้หลังส่งข้อความมา 1 ครั้ง</div>
+  <div id="r-list"></div>
+  <div class="form-err" id="r-msg" role="status"></div>
+  <div class="actions"><button type="button" class="btn" id="r-reload">รีเฟรช</button><button type="button" class="btn" id="r-close">ปิด</button></div>
 </dialog>
 
 <dialog id="ndlg">
@@ -282,7 +290,7 @@ function render() {
 function show(which) {
   $("login").hidden = which !== "login";
   $("app").hidden = which !== "app";
-  $("out").hidden = $("reload").hidden = $("people").hidden = $("foot").hidden = $("add").hidden = which !== "app";
+  $("out").hidden = $("reload").hidden = $("people").hidden = $("rcp").hidden = $("foot").hidden = $("add").hidden = which !== "app";
   $("status").hidden = which !== "status";
 }
 function setStatus(msg, isErr) {
@@ -463,6 +471,49 @@ $("nform").addEventListener("submit", async (ev) => {
     $("n-err").textContent = ERR_TH[e.message] || (e.message === "no_tables" ? "ยังไม่ได้สร้างตาราง notes ใน D1" : "บันทึกไม่สำเร็จ");
   }
 });
+
+// ----- ผู้รับสรุปเช้า -----
+function rmsg(t, bad) { const m = $("r-msg"); m.textContent = t || ""; m.style.color = bad ? "" : "var(--ok)"; }
+const RERR = (e) => (e.message === "no_tables" ? "ยังไม่ได้สร้างตาราง recipients ใน D1 (ดู README)" : "ทำรายการไม่สำเร็จ");
+function renderRecipients(d) {
+  const box = $("r-list"); box.replaceChildren();
+  if (!d.recipients.length) { box.textContent = "ยังไม่มีผู้รับ — ให้คนที่จะรับสรุปแอด LINE OA ของลิลลี่ แล้วส่งข้อความอะไรก็ได้มา 1 ครั้ง จากนั้นกดรีเฟรช"; return; }
+  for (const r of d.recipients) {
+    const card = document.createElement("div"); card.className = "crow"; card.style.flexDirection = "column"; card.style.alignItems = "stretch";
+    const head = document.createElement("div"); head.className = "nm"; head.textContent = "#" + r.id + " " + r.name;
+    const sm = document.createElement("small"); sm.textContent = !r.followed ? "⛔ เลิกเป็นเพื่อน/บล็อก (ส่งไม่ได้)" : r.active && r.sections.length ? "✅ กำลังส่ง" : "⏳ ยังไม่ส่ง"; head.appendChild(sm);
+    const chips = document.createElement("div"); chips.className = "chips";
+    const boxes = [];
+    for (const s of d.sections) {
+      const l = document.createElement("label"), i = document.createElement("input");
+      i.type = "checkbox"; i.value = s.key; i.checked = r.sections.includes(s.key); boxes.push(i);
+      l.append(i, document.createTextNode(s.label)); chips.appendChild(l);
+    }
+    const on = document.createElement("label"), onI = document.createElement("input");
+    onI.type = "checkbox"; onI.checked = r.active; on.style.cssText = "display:flex;gap:8px;align-items:center;margin:8px 0 0;color:var(--ink)"; onI.style.width = "auto"; on.append(onI, document.createTextNode("เปิดการส่ง"));
+    const act = document.createElement("div"); act.className = "actions";
+    const del = document.createElement("button"); del.type = "button"; del.className = "btn"; del.textContent = "ลบ";
+    del.onclick = async () => {
+      if (!window.confirm("ลบ #" + r.id + " ออกจากรายชื่อผู้รับ ?")) return;
+      try { await api("/api/recipients/delete", "POST", { id: r.id }); await loadRecipients(true); rmsg("ลบแล้ว"); } catch (e) { if (!authFailed(e)) rmsg(RERR(e), true); }
+    };
+    const save = document.createElement("button"); save.type = "button"; save.className = "btn primary"; save.textContent = "บันทึก";
+    save.onclick = async () => {
+      const sections = boxes.filter((b) => b.checked).map((b) => b.value);
+      if (onI.checked && !sections.length) { rmsg("ติ๊กส่วนที่จะส่งอย่างน้อย 1 ส่วนก่อนเปิดการส่ง", true); return; }
+      try { await api("/api/recipients", "POST", { id: r.id, sections, active: onI.checked }); await loadRecipients(true); rmsg("บันทึกแล้ว"); } catch (e) { if (!authFailed(e)) rmsg(RERR(e), true); }
+    };
+    act.append(del, save);
+    card.append(head, chips, on, act); box.appendChild(card);
+  }
+}
+async function loadRecipients(keep) {
+  try { renderRecipients(await api("/api/recipients")); if (!keep) rmsg(""); }
+  catch (e) { if (!authFailed(e)) rmsg(e.message === "no_tables" ? "ยังไม่ได้สร้างตาราง recipients ใน D1 (ดู README)" : "โหลดรายชื่อผู้รับไม่สำเร็จ", true); }
+}
+$("rcp").onclick = () => { $("rdlg").showModal(); loadRecipients(); };
+$("r-reload").onclick = () => loadRecipients();
+$("r-close").onclick = () => $("rdlg").close();
 
 // ----- รายชื่อและกลุ่ม -----
 let book = { contacts: [], groups: [] };
