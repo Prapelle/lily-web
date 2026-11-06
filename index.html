@@ -489,6 +489,8 @@ function renderRecipients(d) {
       i.type = "checkbox"; i.value = s.key; i.checked = r.sections.includes(s.key); boxes.push(i);
       l.append(i, document.createTextNode(s.label)); chips.appendChild(l);
     }
+    const em = document.createElement("input"); em.type = "email"; em.placeholder = "อีเมล Dashboard (สำหรับส่วน Production)"; em.value = r.email || ""; em.maxLength = 120; em.autocomplete = "off";
+    em.style.cssText = "width:100%;margin-top:8px;padding:8px;border:1px solid var(--line, #e5d5da);border-radius:8px;font:inherit;background:transparent;color:inherit;box-sizing:border-box";
     const on = document.createElement("label"), onI = document.createElement("input");
     onI.type = "checkbox"; onI.checked = r.active; on.style.cssText = "display:flex;gap:8px;align-items:center;margin:8px 0 0;color:var(--ink)"; onI.style.width = "auto"; on.append(onI, document.createTextNode("เปิดการส่ง"));
     const act = document.createElement("div"); act.className = "actions";
@@ -501,10 +503,11 @@ function renderRecipients(d) {
     save.onclick = async () => {
       const sections = boxes.filter((b) => b.checked).map((b) => b.value);
       if (onI.checked && !sections.length) { rmsg("ติ๊กส่วนที่จะส่งอย่างน้อย 1 ส่วนก่อนเปิดการส่ง", true); return; }
-      try { await api("/api/recipients", "POST", { id: r.id, sections, active: onI.checked }); await loadRecipients(true); rmsg("บันทึกแล้ว"); } catch (e) { if (!authFailed(e)) rmsg(RERR(e), true); }
+      if (sections.includes("production") && !em.value.trim()) { rmsg("ส่วน Production ต้องใส่อีเมล Dashboard ของคนนั้นก่อน", true); return; }
+      try { await api("/api/recipients", "POST", { id: r.id, sections, active: onI.checked, email: em.value.trim() }); await loadRecipients(true); rmsg("บันทึกแล้ว"); } catch (e) { if (!authFailed(e)) rmsg(e.message === "bad_email" ? "รูปแบบอีเมลไม่ถูกต้อง" : e.message === "no_email_table" ? "บันทึกส่วนที่เลือกแล้ว แต่ยังไม่มีตาราง recipient_emails ใน D1 (ดู README)" : RERR(e), true); }
     };
     act.append(del, save);
-    card.append(head, chips, on, act); box.appendChild(card);
+    card.append(head, chips, em, on, act); box.appendChild(card);
   }
 }
 async function loadRecipients(keep) {
