@@ -579,7 +579,7 @@ $("g-form").onsubmit = (ev) => {
 // ----- เข้าสู่ระบบ -----
 function signOut(msg, retry) {
   idToken = null; data = null;
-  try { sessionStorage.removeItem("lily_tok"); } catch {}
+  try { sessionStorage.removeItem("lily_tok"); localStorage.removeItem("lily_sess"); } catch {}
   if (window.google && google.accounts && google.accounts.id) {
     if (!retry) google.accounts.id.disableAutoSelect();
     else google.accounts.id.prompt(); // เซสชันหมดอายุ: ให้ Google ล็อกอินกลับให้เงียบ ๆ ถ้าเคยอนุญาตไว้
@@ -588,10 +588,15 @@ function signOut(msg, retry) {
   $("who").textContent = msg || "";
 }
 
-function onCredential(resp) {
+async function onCredential(resp) {
   idToken = resp.credential;
   try { sessionStorage.setItem("lily_tok", idToken); } catch {}
   setStatus("กำลังโหลด…");
+  // แลกเป็นเซสชัน 30 วัน เก็บในเครื่องนี้ — เปิดครั้งหน้าไม่ต้องล็อกอินอีก
+  try {
+    const r = await fetch(API_BASE + "/api/session", { method: "POST", headers: { Authorization: "Bearer " + idToken } });
+    if (r.ok) { const j = await r.json(); if (j.session) { idToken = j.session; localStorage.setItem("lily_sess", j.session); } }
+  } catch {}
   load();
 }
 
@@ -629,7 +634,7 @@ $("out").addEventListener("click", () => signOut(""));
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
 
 try {
-  const saved = sessionStorage.getItem("lily_tok");
+  const saved = localStorage.getItem("lily_sess") || sessionStorage.getItem("lily_tok");
   if (saved && tokenUsable(saved)) { idToken = saved; load(); }
 } catch {}
 initGoogle();
