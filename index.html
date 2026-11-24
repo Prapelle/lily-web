@@ -633,6 +633,18 @@ $("out").addEventListener("click", () => signOut(""));
 
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
 
+// ลิงก์เข้าเว็บจาก LINE (#k=...): แลกเป็นเซสชัน 30 วัน แล้วลบ token ออกจาก URL
+(async () => {
+  const m = /[#&]k=([^&]+)/.exec(location.hash);
+  if (!m) return;
+  try { history.replaceState(null, "", location.pathname + location.search); } catch {}
+  try {
+    const r = await fetch(API_BASE + "/api/session-link", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ t: decodeURIComponent(m[1]) }) });
+    if (r.ok) { const j = await r.json(); if (j.session) { idToken = j.session; localStorage.setItem("lily_sess", j.session); setStatus("กำลังโหลด…"); load(); } }
+    else setStatus("ลิงก์หมดอายุหรือถูกใช้แล้ว ขอลิงก์ใหม่ใน LINE โดยพิมพ์ “เข้าเว็บ” ค่ะ");
+  } catch {}
+})();
+
 try {
   const saved = localStorage.getItem("lily_sess") || sessionStorage.getItem("lily_tok");
   if (saved && tokenUsable(saved)) { idToken = saved; load(); }
