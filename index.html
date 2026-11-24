@@ -318,7 +318,7 @@ function authFailed(e) {
 async function load(msg) {
   try {
     data = await api("/api/tasks");
-    $("who").textContent = data.email;
+    $("who").textContent = data.email + sessNote();
     show("app");
     render();
     if (msg) $("note").textContent = msg;
@@ -596,8 +596,19 @@ async function onCredential(resp) {
   try {
     const r = await fetch(API_BASE + "/api/session", { method: "POST", headers: { Authorization: "Bearer " + idToken } });
     if (r.ok) { const j = await r.json(); if (j.session) { idToken = j.session; localStorage.setItem("lily_sess", j.session); } }
-  } catch {}
+    else console.warn("session exchange failed", r.status);
+  } catch (e) { console.warn("session exchange error", e); }
   load();
+}
+
+// บอกสถานะเซสชันข้างอีเมล: "· อยู่ถึง 24 ธ.ค." = เซสชัน 30 วันทำงาน · "· ชั่วคราว 1 ชม." = ยังเป็นโทเค็น Google (เซิร์ฟเวอร์ไม่ออกเซสชันให้)
+function sessNote() {
+  try {
+    if (!idToken) return "";
+    const p = JSON.parse(atob(idToken.split(".")[1].replace(/-/g, "+").replace(/_/g, "/")));
+    if (!idToken.startsWith("lily1.")) return " · ชั่วคราว 1 ชม.";
+    return " · อยู่ถึง " + new Date(p.exp * 1000).toLocaleDateString("th-TH", { day: "numeric", month: "short" });
+  } catch { return ""; }
 }
 
 function tokenUsable(tok) {
